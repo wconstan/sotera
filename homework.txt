@@ -1,0 +1,57 @@
+Data Scientist Interview Homework
+
+Sotera Defense Systems
+
+October 6, 2015
+
+Problem Prompt
+
+A large part of a role as a data scientist is obtaining and cleaning
+
+data. As a part of this interview, we will test your ability to do
+
+so with a fairly straight forward task. What you we will be ask-
+  ing you to do is to obtain an large volume of geo-tagged tweets
+
+from a single user in the greater Seattle area, and calculate the
+
+probability that this user is in a specific location, given this data. If
+
+you don’t have a twitter developer account, registration is free at
+
+https://dev.twitter.com/.
+
+Identify a High Volume Individual Tweeter
+
+To Identify a high volume individual tweeter, it is recommended
+
+that you scrape the 1% stream with a bounding box around the area.
+
+Typically users will geotag all or none of their tweets, so you will
+
+probably have sufficient candidates after scraping for only a few
+
+minutes.
+
+Find their Locations
+
+Once you have a few candidates, you can use the api to search their
+
+catalog for historical tweet info. As mentioned previously, you’ll
+
+want to find a user who has a few hundred geotagged tweets, so you
+
+may need to go through a few candidates. Once you have found a
+
+candidate, divide the area into a the nearest hundredth of a degree
+
+(in lat-lon) and from their calculate a percentage.
+
+What to Return
+
+Please return the script you used to identify users, obtain the data,
+
+and perform the calculations (they can be multiple scripts). The re-
+  sults should be in a text file with 3 columns: lat, lon, percentage that
+
+user is there, as well as a brief description of what you did.
