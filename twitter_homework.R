@@ -111,8 +111,8 @@ daytime_category <-function(date) {
       breaks = c(00, 04, 08, 12, 16, 20, 24),
       label = c("late night", "early morning",
                 "morning", "afternoon",
-                "evening", "early night")
-  )
+                "evening", "early night"),
+      include.lowest = TRUE)
 }
 
 DT[, day_time := daytime_category(created)]
