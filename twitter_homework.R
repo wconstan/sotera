@@ -2,7 +2,8 @@
 lib <- .Library
 repos <- 'https://cran.rstudio.com'
 
-required_packages <- c("streamR", "RCurl", "ROAuth", "RJSONIO",'ggplot2','maps','grid','data.table','httr','twitteR','wordcloud','tm')
+required_packages <- c("streamR", "RCurl", "ROAuth", "RJSONIO",'ggplot2','maps','grid',
+                       'data.table','httr','twitteR','wordcloud','tm','geosphere','randomForest')
 installed_packages <- .packages(all.available = TRUE, lib.loc = lib)
 missing_packages <- setdiff(required_packages, installed_packages)
 if (length(missing_packages) > 0L) {
@@ -83,19 +84,17 @@ ggplot(regional_map) +
 
 
 # tweet history for a particular user
-library("twitteR")
-library("ROAuth")
-
 consumer_key <- '591cC2qtKdNJi0hpv2FoEhaTA'
 consumer_secret <- 'N9n08szDBwC9RoVodc1d9SQbhGzy6n01yQ68Gb6dF8QllQ9wq0'
 access_token <- '770382304636182528-aHXQBlH4wi439uOv3FFWEbhYN1RCJwq'
 access_secret <-'RXKXr9UCyrA6tpzEPq6LJorujMS9Vnp8lzeiuR8regIxB'
 
-registerTwitterOAuth(credentials)
-setup_twitter_oauth(consumer_key = consumer_key, consumer_secret = consumer_secret_key, access_token = access_token, access_secret = access_secret)
+# registerTwitterOAuth(credentials)
+setup_twitter_oauth(consumer_key = consumer_key, consumer_secret = consumer_secret, access_token = access_token, access_secret = access_secret)
 
 tweet_history_user = userTimeline('ArianeAstraea', n = 3200)
-DT <- get_geo_tagged_data(data.table(twListToDF(tweet_history_user)))
+tweet_history_user <- data.table(twListToDF(tweet_history_user))
+DT <- get_geo_tagged_data(tweet_history_user)
 
 # Feature extraction
 DT[, day := weekdays(created)]
@@ -160,4 +159,13 @@ word_table <- table(words)
 wordcloud(words = names(word_table), freq = word_table, min.freq = 3L)
 
 
+# define center to be the median tweet location on lat-long coordinates
+center <- DT[, c(median(as.numeric(latitude), na.rm = TRUE), median(as.numeric(longitude), na.rm = TRUE))]
 
+haverstine_distance <- function(p1, p2, r = 3963.190592) {
+  # Vicenty elipsoid great circle distance between two points in miles
+  miles_per_meter <- 0.000621371
+  distVincentyEllipsoid(p1, p2) * miles_per_meter
+}
+
+DT[, miles_from_center := haverstine_distance(rev(center), cbind(as.numeric(longitude), as.numeric(latitude)))]
