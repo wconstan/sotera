@@ -97,7 +97,7 @@ tweet_history_user <- data.table(twListToDF(tweet_history_user))
 DT <- get_geo_tagged_data(tweet_history_user)
 
 # Feature extraction
-DT[, day := weekdays(created)]
+DT[, day := factor(weekdays(created))]
 DT <- DT[order(created)]
 day_rank <- DT[, .N, by = day][order(N, decreasing = TRUE)] # what day is she tweeting the most?
 day_rank[, day_rank := seq.int(.N)]
@@ -115,7 +115,7 @@ daytime_category <-function(date) {
       include.lowest = TRUE)
 }
 
-DT[, day_time := daytime_category(created)]
+DT[, day_time := factor(daytime_category(created))]
 
 # add temp data
 mean_seattle_temps <- as.matrix(read.delim('noaa_seattle_daily_temp_history.txt', 
@@ -144,10 +144,10 @@ date_to_season <- function(DATES) {
                   ifelse (d >= SS & d < FE, "Summer", "Fall")))
 }
 
-DT[, season := date_to_season(created)]
+DT[, season := factor(date_to_season(created))]
 
 # form lat-long target category
-DT[, lat_long := paste(round(as.numeric(latitude), 2L), round(as.numeric(longitude), 2L), sep = ':')]
+DT[, lat_long := factor(paste(round(as.numeric(latitude), 2L), round(as.numeric(longitude), 2L), sep = ':'))]
 
 # search_string <- "#mls"
 # num_tweets <- 100
@@ -157,7 +157,6 @@ DT[, lat_long := paste(round(as.numeric(latitude), 2L), round(as.numeric(longitu
 words <- DT[, clean_words(text)]
 word_table <- table(words)
 wordcloud(words = names(word_table), freq = word_table, min.freq = 3L)
-
 
 # define center to be the median tweet location on lat-long coordinates
 center <- DT[, c(median(as.numeric(latitude), na.rm = TRUE), median(as.numeric(longitude), na.rm = TRUE))]
@@ -169,3 +168,34 @@ haverstine_distance <- function(p1, p2, r = 3963.190592) {
 }
 
 DT[, miles_from_center := haverstine_distance(rev(center), cbind(as.numeric(longitude), as.numeric(latitude)))]
+
+######
+# fit model
+rf_model <- randomForest(lat_long ~ day + day_time + mean_temp + miles_from_center + season, 
+                         data=DT, importance=TRUE, proximity=TRUE, mtry = 5)
+
+# variable importance
+varImpPlot(rf_model)
+
+rf_model_predict <- function(rf_model) {
+
+  pred_mat <- predict(rf_model, type='prob')
+  classes <- data.table(do.call(rbind.data.frame, strsplit(colnames(pred_mat), split = ':')))
+  setnames(classes, c('lat','lon'))
+
+  best_prob <- function(probs){
+    ix <- which.max(probs)
+    cbind(classes[ix], 
+          data.table(percentage = round(probs[ix] * 100, 2L)))
+  }
+  
+  rbindlist(apply(pred_mat, MARGIN = 1, best_prob))
+}
+
+# calculate the best class probability for each tweet
+probs <- rf_model_predict(rf_model)
+
+# multiple probabilities will exist for each class as 
+# multiple tweets may be assigned to the same lat-long class:
+# form the average to reduce to a single probablity per location
+mean_probs <- probs[, list(percentage = round(mean(percentage), 2L)), by = c('lat', 'lon')][order(lat, lon)]
