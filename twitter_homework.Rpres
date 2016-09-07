@@ -17,6 +17,10 @@
   font-size: 1em;
 }
 
+.super-small-code pre code {
+  font-size: 0.6em;
+}
+
 .reveal h1, .reveal h2, .reveal h3 {
   word-wrap: normal;
   -moz-hyphens: none;
@@ -133,7 +137,12 @@ People may limit their travel based on the distance, e.g., why go 50 miles
 for ice cream when you go a few miles from home to get it? Our user, however,
 traveled to the Philippines this last year and so we need to define the
 distances he traveled relative to some center reference point, which we define
-based on a simple kmeans clustering. First, let's prove that we have two clusters of
+based on a simple kmeans clustering. 
+
+Proof of clusters
+========================================================
+class: small-code
+First, let's prove that we have two clusters of
 data: one centered around the Pacific NW and one in the Philippines:
 
 ```{r, echo=FALSE}
@@ -141,8 +150,98 @@ load(file = 'training_pre_cluster.RData')
 ```
 
 ```{r}
-DT[, plot(latitude, longitude, pch = 19)]
+invisible(DT[, plot(latitude, longitude, pch = 19)])
 ```
+
+K-Means clustering
+========================================================
+class: small-code
+Next, I use **stats::kmeans** to cluster the lat-lon values, which outputs cluster centers that we will use for travel distance:
+
+```{r, eval=FALSE}
+cluster <- kmeans(DT[, list(latitude, longitude)], centers = 2)
+regions <- c('PACNW', 'PHILIPPINES')
+if (cluster$centers[1L,1L] < 20) regions <- rev(regions) 
+centers <- data.table(center_latitude = cluster$centers[,1L], 
+                      center_longitude = cluster$centers[,2L], 
+                      cluster_color = c('red','blue'),
+                      region = regions,
+                      key = 'region')
+
+# merge clsuter information into training data for convenience
+DT[, region := ifelse(cluster$cluster == 1L, regions[1L], regions[2L])]
+setkey(DT, region)
+DT <- DT[centers] # fast data.table merge
+print(centers)
+```
+
+```{r,echo=FALSE}
+load(file = 'clusters.RData')
+print(centers)
+```
+
+Plotting the clusters
+========================================================
+class: super-small-code
+Here, I develop a somewhat fancy function to plot the clusters with a map overlay to better visualize the Tweets:
+
+```{r}
+library(ggplot2)
+
+# Define fancy plot function to better visualize clusters
+plot_cluster <- function(data) {
+  stopifnot(is.data.table(data))
+  stopifnot(data[, length(unique(region))] == 1L)
+
+  color <- data[, unique(cluster_color)]
+  region <- data[, unique(region)]
+  centers <- data[, list(latitude = unique(center_latitude), longitude = unique(center_longitude))]
+  
+  if (region == 'PHILIPPINES'){
+    regional_map <- map_data('world', regions = 'Philippines')
+    capital <- data.frame(latitude = 14.5995, longitude = 120.9842, name = 'Manila, Philippines')
+  } else {
+    regional_map <- map_data('county', region = c('washington'))
+    capital <- data.frame(latitude = 47.0379, longitude = -122.9007, name = 'Olympia, WA')
+  }
+  
+  g <- ggplot(regional_map) + 
+    geom_map(aes(map_id = region), map = regional_map, fill = "white", color = "grey20", size = 0.25) +
+    expand_limits(x = regional_map$long, y = regional_map$lat) +
+    geom_point(data = data, aes(x = longitude, y = latitude), size = 3, alpha = 2/5, color = color) +
+    geom_point(data = centers, 
+               aes(x = longitude, y = latitude), size = 1, stroke = 1, alpha = 1, color = 'black', fill = 'white', shape = 21) +
+    geom_point(data = capital, aes(x = longitude, y = latitude), size = 1, alpha = 1, 
+               shape = 24, color = 'black', fill = 'black') +
+    geom_point(data = capital, aes(x = longitude, y = latitude), size = 1, alpha = 1, 
+               shape = 25, color = 'black', fill = 'black') +
+    geom_text(data = capital, aes(x = longitude, y = latitude, label = name, hjust = -0.1)) +
+    xlab('longitude') + ylab('latitude')
+  
+  print(g)
+  
+  return(invisible(g))
+}
+
+# plot the clusters
+plot_cluster(DT[region == 'PACNW']); plot_cluster(DT[region == 'PHILIPPINES'])
+```
+
+Pacific Northwest cluster
+========================================================
+class: small-code
+```{r pacnw_cluster,echo=FALSE,fig.width=3,fig.height=1.6,dpi=300,out.width="1920px",height="1080px"}
+plot_cluster(DT[region == 'PACNW'])
+```
+
+Phillippines cluster
+========================================================
+class: small-code
+```{r philippines_cluster,echo=FALSE,fig.width=5,fig.height=2.8,dpi=300,out.width="1920px",height="1080px"}
+plot_cluster(DT[region == 'PHILIPPINES'])
+```
+
+
 
 Gathering supporting data
 ========================================================

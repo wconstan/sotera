@@ -111,7 +111,7 @@ DT <- get_geo_tagged_data(tweet_history_user)
 save(DT, file = 'training_pre_cluster.RData')
 DT[, plot(latitude, longitude, pch = 19)] # obviously 2 clusters
 
-
+# Perform K-Means clustering to obtain cluster centers for distance calculations
 cluster <- kmeans(DT[, list(latitude, longitude)], centers = 2)
 regions <- c('PACNW', 'PHILIPPINES')
 if (cluster$centers[1L,1L] < 20) regions <- rev(regions) 
@@ -122,9 +122,16 @@ centers <- data.table(center_latitude = cluster$centers[,1L],
                       key = 'region')
 print(centers)
 DT[, region := ifelse(cluster$cluster == 1L, regions[1L], regions[2L])]
+
+# Merge the center data with the training data
+# Note: I likely would not do this in practice as it adds a lot of repetitive data.
+# However, the data set is small and it is convenient for subsequent distance calculations
+# and plotting
 setkey(DT, region)
 DT <- DT[centers]
+save(DT, cluster, centers, regions, file = 'clusters.RData')
 
+# Define fancy plot function to better visualize clusters
 plot_cluster <- function(data) {
   stopifnot(is.data.table(data))
   stopifnot(data[, length(unique(region))] == 1L)
