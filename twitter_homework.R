@@ -1,7 +1,11 @@
-# Install and Activate Packages
+#####################################################################################
+# Install and load required packages
+
+# Define local library location and CRAN respository
 lib <- .Library
 repos <- 'https://cran.rstudio.com'
 
+# Define list of required packages and install them if missing
 required_packages <- c("streamR", "RCurl", "ROAuth", "RJSONIO",'ggplot2','maps','grid',
                        'data.table','httr','twitteR','wordcloud','tm','geosphere','randomForest','stats')
 installed_packages <- .packages(all.available = TRUE, lib.loc = lib)
@@ -10,10 +14,13 @@ if (length(missing_packages) > 0L) {
   install.packages(pkgs = missing_packages, lib = lib, repos = repos)
 }
 
-# http://www.ncdc.noaa.gov/data-access/quick-links
-
+# Load the required packages
 invisible(sapply(required_packages, function(pkg) stopifnot(require(pkg, character.only = TRUE))))
 
+#####################################################################################
+# Tap into Twitter Streaming API to obtain high-volume users with geotagged Tweets
+
+# Define local functions
 get_bounding_box <- function(map_data) {
   lat_long_range <- map_data$range
   longitudes <- lat_long_range[1:2]
@@ -23,31 +30,9 @@ get_bounding_box <- function(map_data) {
   return(c(sw_corner, ne_corner))
 }
 
-clean_words <- function(text) {
-  removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
-  removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
-  text <- gsub("[^[:alnum:]///' ]", "", text)
-  text <- gsub('[[:punct:]]', '', text)
-  text <- gsub('[[:cntrl:]]', '', text)
-  text <- gsub('\\d+', '', text)
-  text <- tolower(text)
-  text <- removeURL(text)
-  text <- removeNumPunct(text)
-  word_list <- stringr::str_split(text, '\\s+')
-  words <- unlist(word_list)
-  return(words[nzchar(words)])
-}
-
-# load credentials
-if (file.exists('credentials.RData')) {
-  load('credentials.RData')
-} else {
-  stop('Run authorization scipt')
-}
-
-get_bounds <- function(database = 'county', state = 'washington', regions = NULL) {
+get_bounds <- function(database = 'county', state = 'washington', regions = NULL, plot = FALSE) {
   regions <- paste(state, regions, sep = ',')
-  return(get_bounding_box(map(database = database, regions = regions, plot = FALSE)))
+  return(get_bounding_box(map(database = database, regions = regions, plot = plot)))
 }
 
 get_geo_tagged_data <- function(data) {
@@ -59,77 +44,74 @@ get_geo_tagged_data <- function(data) {
   return(data)
 }
 
-# WA/King and WA/Pierce county bounding box (approx)
-locations <- get_bounds(state = 'washington', regions = NULL)
+# Load credentials (previously saved)
+if (file.exists('credentials.RData')) {
+  load('credentials.RData')
+} else {
+  stop('Run authorization scipt')
+}
 
-# get tweets within bounding box: stream API filtering via bounding box
+# Get lat-lon bounding box of various counties in Washington state
+state <- 'washington'
+regions <- c('Snohomish','King','Pierce','Kitsap','Thurston','Mason')
+locations <- get_bounds(state = state, regions = regions)
+
+# Get tweets within bounding box for five minutes via stream filtering
 tweets <- data.table(parseTweets(filterStream("", locations = locations, timeout = 300, oauth = credentials), verbose = FALSE))
+stream_sample <- tweets[1:10, list(text = paste(substr(text, 1, 40), '...'), screen_name, statuses_count, lat, lon)]
+save(stream_sample, file='stream_sample.RData')
 
-# add got_geo column
-tweets[, got_geo := FALSE]
-tweets[!is.na(lat) & !is.na(lon), got_geo := TRUE]
-
-# get ids of users that have geo_tags
+# Obtain only the Tweets that have geotagged tweets and 
+# filter out descriptions that appear to be job related
 tweets_geo_tagged <- tweets[!is.na(lat) & !is.na(lon), ]
-DT <- tweets_geo_tagged[!grepl('geo-targeted|jobs|careers', description, ignore.case = TRUE)]
+filtered_tweets <- tweets_geo_tagged[!grepl('geo-targeted|jobs|careers', description, ignore.case = TRUE)]
 
-users_with_geo_tags <- tweets[!is.na(lat) & !is.na(lon), unique(user_id_str)]
+# order by the status_count
+filtered_tweets <- filtered_tweets[order(-statuses_count)]
+sample_filtered_tweets <- filtered_tweets[1:10, list(text = paste(substr(text, 1, 40), '...'), screen_name, statuses_count, lat, lon)]
+save(sample_filtered_tweets, file='sample_filtered_tweets.RData')
 
-regional_map <- data.table(map_data("county"))[region == 'washington']
+#####################################################################################
+# Obtain Tweet history for targeted high-volume user
 
-points <- tweets[, list(x = as.numeric(lon), y = as.numeric(lat))]
-ggplot(regional_map) + 
-  geom_map(aes(map_id = region), map = regional_map, fill = "white", 
-           color = "grey20", size = 0.25) + expand_limits(x = regional_map$long, y = regional_map$lat) + 
-  geom_point(data = points, aes(x = x, y = y), size = 1, alpha = 1/5, color = "darkblue") + 
-  theme(axis.line = element_blank(), axis.text = element_blank(), axis.ticks = element_blank(),
-        axis.title = element_blank(), panel.background = element_blank(), panel.border = element_blank(),
-        panel.grid.major = element_blank(), plot.background = element_blank(),
-        plot.margin = unit(0 * c(-1.5, -1.5, -1.5, -1.5), "lines"))
+# NOTE: We are using the twitteR package here, which uses a slightly different way
+# of establishing OAUTH security. So, we must get our credentials working for this effort.
 
-
-# tweet history for a particular user
-consumer_key <- '591cC2qtKdNJi0hpv2FoEhaTA'
-consumer_secret <- 'N9n08szDBwC9RoVodc1d9SQbhGzy6n01yQ68Gb6dF8QllQ9wq0'
-access_token <- '770382304636182528-aHXQBlH4wi439uOv3FFWEbhYN1RCJwq'
-access_secret <-'RXKXr9UCyrA6tpzEPq6LJorujMS9Vnp8lzeiuR8regIxB'
-
-# registerTwitterOAuth(credentials)
+# Load security keys as desginated by my faux application
+load('oauth_keys.RData') # previously stored
 setup_twitter_oauth(consumer_key = consumer_key, consumer_secret = consumer_secret, 
                     access_token = access_token, access_secret = access_secret)
 
-tweet_history_user = userTimeline('ArianeAstraea', n = 3200)
+
+# Identify the target user
+high_volume_user <- 'ArianeAstraea'
+
+# Use the twitteR::userTimeline function to obtain the Tweet history.
+# We are limited to 3200 Tweets. Convert the output to a data.table object.
+tweet_history_user = userTimeline(high_volume_user, n = 3200)
 tweet_history_user <- data.table(twListToDF(tweet_history_user))
 save(tweet_history_user, file = 'tweet_history.RData')
 
-#### OBTAIN DATA FOR TRAINING
+# Form initial training data by filtering the history for geotagged Tweets
+# NOTE: We will be doing a lot of data.table manipulation, so let's save the
+# variable to 'DT', which is short and sweet.
+if (!exists('tweet_history_user')) load(file = 'tweet_history.RData')
 DT <- get_geo_tagged_data(tweet_history_user)
 
+#####################################################################################
+# Feature engineering
 
-# Feature extraction
-DT[, day := factor(weekdays(created))]
-DT <- DT[order(created)]
-day_rank <- DT[, .N, by = day][order(N, decreasing = TRUE)] # what day is the user tweeting the most?
-day_rank[, day_rank := seq.int(.N)]
+# People may limit their travel based on the distance, e.g., why go 50 miles
+# for ice cream when you go a few miles from home to get it? Our user, however,
+# traveled to the Philippines this last year and so we need to define the
+# distances he traveled relative to some center reference point, which we define
+# based on a simple kmeans clustering.
 
-DT <- merge(DT, day_rank, by = 'day')
-
-
-daytime_category <-function(date) {
-  
-  cut(as.numeric(format(date, "%H")),
-      breaks = c(00, 04, 08, 12, 16, 20, 24),
-      label = c("late night", "early morning",
-                "morning", "afternoon",
-                "evening", "early night"),
-      include.lowest = TRUE)
-}
-
-DT[, day_time := factor(daytime_category(created))]
-
-# define center to be the median tweet location on lat-long coordinates
+# Display the lat-lon clusters
+save(DT, file = 'training_pre_cluster.RData')
 DT[, plot(latitude, longitude, pch = 19)] # obviously 2 clusters
-# center <- DT[, c(median(latitude, na.rm = TRUE), median(longitude, na.rm = TRUE))]
+
+
 cluster <- kmeans(DT[, list(latitude, longitude)], centers = 2)
 regions <- c('PACNW', 'PHILIPPINES')
 if (cluster$centers[1L,1L] < 20) regions <- rev(regions) 
@@ -191,16 +173,26 @@ DT[, dist_from_center := vincenty_distance(cbind(center_longitude, center_latitu
                                              cbind(longitude, latitude)), 
    by = region]
 
-# add temp data
-# http://www.ncdc.noaa.gov/cdo-web
 
-weather <- data.table(read.csv('weather.csv'))
-weather <- weather[grepl('Seattle|Manila', STATION_NAME, ignore.case = TRUE) & TAVG > 0]
-weather[, region := ifelse(grepl('Seattle', STATION_NAME, ignore.case = TRUE), 'PACNW', 'PHILIPPINES')]
-weather <- weather[, list(region, DATE, PRCP, TAVG, TMAX, TMIN)]
+# Convert the Tweet date to a day of the week (Monday, Tuesday, etc.) and merge into training data
+DT[, day := factor(weekdays(created))]
+DT <- DT[order(created)]
+day_rank <- DT[, .N, by = day][order(N, decreasing = TRUE)] # what day is the user tweeting the most?
+day_rank[, day_rank := seq.int(.N)]
+DT <- merge(DT, day_rank, by = 'day')
 
-DT[, DATE := as.integer(format(created, '%Y%m%d'))]
-DT <- merge(DT, weather, by = c('region', 'DATE'), all.x = TRUE)
+# Categorize what time of day the Tweet occurred and add to training data
+daytime_category <-function(date) {
+  
+  cut(as.numeric(format(date, "%H")),
+      breaks = c(00, 04, 08, 12, 16, 20, 24),
+      label = c("late night", "early morning",
+                "morning", "afternoon",
+                "evening", "early night"),
+      include.lowest = TRUE)
+}
+
+DT[, day_time := factor(daytime_category(created))]
 
 # add season
 date_to_season <- function(DATES) {
@@ -218,6 +210,18 @@ date_to_season <- function(DATES) {
 }
 
 DT[, season := factor(date_to_season(created))]
+
+# add temp data
+# http://www.ncdc.noaa.gov/cdo-web
+
+weather <- data.table(read.csv('weather.csv'))
+weather <- weather[grepl('Seattle|Manila', STATION_NAME, ignore.case = TRUE) & TAVG > 0]
+weather[, region := ifelse(grepl('Seattle', STATION_NAME, ignore.case = TRUE), 'PACNW', 'PHILIPPINES')]
+weather <- weather[, list(region, DATE, PRCP, TAVG, TMAX, TMIN)]
+
+DT[, DATE := as.integer(format(created, '%Y%m%d'))]
+DT <- merge(DT, weather, by = c('region', 'DATE'), all.x = TRUE)
+
 
 # form lat-long target category
 DT[, lat_long := factor(paste(round(latitude, 2L), round(longitude, 2L), sep = ':'))]
@@ -306,6 +310,8 @@ DT[, parsed_location := factor(parsed_locations$loc)]
 DT[, region := factor(region)]
 form <- formula(lat_long ~ DATE + day + day_time + TAVG + TMIN + TMAX + dist_from_center + PRCP + season + region + parsed_location)
 
+form <- formula(lat_long ~ day + day_time + TAVG + TMIN + TMAX + dist_from_center + PRCP + season + region + parsed_location)
+
 # check for missing independent variables
 ind_vars <- attr(terms(form), 'term.labels')
 rows_with_missing_data <- which(apply(DT[, ind_vars, with = FALSE], MARGIN = 1, function(x) any(is.na(x))))
@@ -322,7 +328,7 @@ if (any_missing) {
   DT[rows_with_missing_data, ind_vars, with = FALSE]
 }
 
-rf_model <- randomForest(form, data=DT, importance=TRUE, proximity=TRUE, mtry = 5)
+rf_model <- randomForest(form, data=DT, importance=TRUE, proximity=TRUE)
 
 # variable importance
 varImpPlot(rf_model)
@@ -349,3 +355,7 @@ probs <- rf_model_predict(rf_model)
 # multiple tweets may be assigned to the same lat-long class:
 # form the average to reduce to a single probablity per location
 mean_probs <- probs[, list(percentage = round(mean(percentage), 2L)), by = c('lat', 'lon')][order(lat, lon)]
+
+# output to a file
+write.csv(mean_probs, file = 'twitter_homewor.csv')
+

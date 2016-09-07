@@ -1,0 +1,176 @@
+<style>
+.midcenter {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+}
+
+
+.footer {
+    color: black; background: #E8E8E8;
+    position: fixed; top: 90%;
+    text-align:center; width:100%;
+}
+
+
+.small-code pre code {
+  font-size: 1em;
+}
+
+.reveal h1, .reveal h2, .reveal h3 {
+  word-wrap: normal;
+  -moz-hyphens: none;
+}
+
+</style>
+
+
+Sotera Defense Solutions: Twitter Homework
+========================================================
+author: William Constantine
+date: September 7, 2016
+width: 1200
+height: 700
+font-family: 'Helvetica'
+
+Problem statement
+========================================================
+transition: zoom
+
+- Identify high-volume Tweeters in the greater Seattle area that geotag their Tweets.
+
+- Collect historical Tweets for a selected high-volume user and divide the geotagged latitude-longitude locations 
+of their Tweets into regions (nearest one hundredth of a degree in lat-long coordinates).
+
+- Use the Tweet information to estimate the probability that the user is in these regions given the data.
+
+- Submit scripts used to identify high-volume users, obtain the data, and perform the calculations.
+
+- Write the output to a text file containing three columns: lat, lon, percentage.
+
+General approach
+========================================================
+
+- Obtain Twitter and Twitter Developer Account
+<https://twitter.com/sotto_voce_vita>
+
+- Develop faux Twitter application to obtain API keys 
+<https://apps.twitter.com/app/12776987>
+
+- Develop R script(s) to 
+  * Collect, summarize and clean Twitter data
+  * Collect supplementary data that may be useful in modeling the user's behavior
+  * Build a classification model using the procured training data
+  * Score the model to form regional probablities
+  * Write scored output to text file
+
+Collecting Twitter data
+========================================================
+class: small-code
+
+I used the **streamR::filterStream** function to open a connection to Twitter's Streaming API, which returns public statuses that match one or more filter predicates. In particular, I used the **locations** and **timeout** filters to collect streaming data for five minutes around the Seattle area:
+
+```{r, eval=FALSE}
+# Get latitude-longitude bounding box of various counties in Washington state
+state <- 'washington'
+regions <- c('Snohomish','King','Pierce','Kitsap','Thurston','Mason')
+locations <- get_bounds(state = state, regions = regions)
+
+# Get tweets within bounding box for 5 minutes via stream filtering
+tweets <- data.table(parseTweets(
+  filterStream("", locations = locations, timeout = 300, oauth = credentials), verbose = FALSE))
+tweets[1:10, list(text, screen_name, statuses_count, lat, lon)]
+```
+
+Sample stream output
+========================================================
+class: small-code
+```{r, echo=FALSE}
+library(data.table)
+load(file = 'stream_sample.RData')
+print(stream_sample)
+```
+
+Isolation of geotagged high-volume users
+========================================================
+class: small-code
+```{r, eval=FALSE}
+# Obtain only the Tweets that have geotagged tweets and 
+# filter out descriptions that appear to be job related
+tweets_geo_tagged <- tweets[!is.na(lat) & !is.na(lon), ]
+filtered_tweets <- tweets_geo_tagged[!grepl('geo-targeted|jobs|careers', 
+                                            description, ignore.case = TRUE)]
+
+# order by the status_count
+filtered_tweets <- filtered_tweets[order(-statuses_count)]
+filtered_tweets[1:10, list(text = paste(substr(text, 1, 40), '...'), 
+                           screen_name, statuses_count, lat, lon)]
+```
+
+Sample high-volume Tweeters
+========================================================
+class: small-code
+```{r, echo=FALSE}
+load(file = 'sample_filtered_tweets.RData')
+print(sample_filtered_tweets)
+```
+
+Selecting a high-end user
+========================================================
+class: small-code
+From the list of high-volume Tweeters, I sampled a few user's histories via the **twitteR::userTimeline** function. Twitter restricts the history to 3200 entries. I settled on a particular user, which I denote as *high_volume_user* below, and obtained their history as follows. To create a training data set for the classification model, I filtered the timeline Tweets to obtain only those that were geotagged:
+
+```{r,eval=FALSE}
+tweet_history_user = userTimeline(high_volume_user, n = 3200)
+tweet_history_user <- data.table(twListToDF(tweet_history_user))
+DT <- get_geo_tagged_data(tweet_history_user)
+```
+
+Feature engineering: adding travel distance
+========================================================
+class: small-code
+People may limit their travel based on the distance, e.g., why go 50 miles
+for ice cream when you go a few miles from home to get it? Our user, however,
+traveled to the Philippines this last year and so we need to define the
+distances he traveled relative to some center reference point, which we define
+based on a simple kmeans clustering. First, let's prove that we have two clusters of
+data: one centered around the Pacific NW and one in the Philippines:
+
+```{r, echo=FALSE}
+load(file = 'training_pre_cluster.RData')
+```
+
+```{r}
+DT[, plot(latitude, longitude, pch = 19)]
+```
+
+Gathering supporting data
+========================================================
+- **Weather**: travel behavior is influenced by the weather and so I gathered temperature and precipitation data from NOAA for the Seattle area and the Philippines and merged it with the Twitter data <http://www.ncdc.noaa.gov/cdo-web/>
+
+
+Modeling Effort: Collecting Twitter Data 2
+========================================================
+
+Tweets can be filtered by keywords, users, language, and location. The output can be saved as an object in memory or written to a text file.
+
+The information gathered via the Twitter streams and history APIs allowed me to idenitfy a high-volume Tweeter that
+For more details on authoring R presentations please visit <https://support.rstudio.com/hc/en-us/articles/200486468>.
+
+- Bullet A
+- Bullet 2
+- Bullet 3
+
+Slide With Code
+========================================================
+
+```{r}
+summary(cars)
+```
+
+Slide With Plot
+========================================================
+
+```{r, echo=FALSE}
+plot(cars)
+```
