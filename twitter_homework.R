@@ -380,7 +380,7 @@ rf_model <- randomForest(form, data=training_data, importance=TRUE, proximity=TR
 save(rf_model, file = 'rf_model.RData')
 
 # Plot variable importance
-varImpPlot(rf_model)
+varImpPlot(rf_model, type = 1)
 
 #####################################################################################
 # Form predictions

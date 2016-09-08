@@ -413,13 +413,13 @@ Random Forest Model: building
 class: super-small-code
 ```{r,eval=FALSE}
 rf_model <- randomForest(form, data=training_data, importance=TRUE, proximity=TRUE)
-varImpPlot(rf_model)
+varImpPlot(rf_model, type = 1)
 ```
 
 ```{r variable_importance,echo=FALSE,fig.width=8,fig.height=3.5,dpi=300,out.width="1920px",height="1080px"}
 library(randomForest)
 load(file = 'rf_model.RData')
-varImpPlot(rf_model)
+varImpPlot(rf_model, type = 1)
 ```
 
 Random Forest Model: Predicting the probabilities
