@@ -123,7 +123,7 @@ load(file = 'sample_filtered_tweets.RData')
 print(sample_filtered_tweets)
 ```
 
-Selecting a high-end user
+Selecting a high-volume user
 ========================================================
 class: small-code
 From the list of high-volume Tweeters, I sampled a few user's histories via the **twitteR::userTimeline** function. Twitter restricts the history to 3200 entries. I settled on a particular user, which I denote as *high_volume_user* below, and obtained their history as follows. To create a training data set for the classification model, I filtered the timeline Tweets to obtain only those that were geotagged:
@@ -247,7 +247,7 @@ plot_cluster(DT[region == 'PHILIPPINES'])
 
 Form distance from cluster centers
 ========================================================
-class: super-small-code
+class: medium-small-code
 ```{r, eval=FALSE}
 vincenty_distance <- function(p1, p2, r = 3963.190592) {
   # Vincenty elipsoid great circle distance between two points in miles
@@ -361,7 +361,7 @@ class: small-code
 <small>Reference: Gradient Boosting Method and Random Forest - Mark Landry @ H20.ai <https://www.youtube.com/watch?v=9wn1f-30_ZY></small>
 
 - Grow and combine multiple decision trees, each fit to a random sample of the original data (rows and columns)
-- The random samples are taken both by rows (Tweet obersvations) and columns (features)
+- The random samples are taken both by rows (Tweet observations) and columns (features)
 - Conceptually, reduces variance with minimal increase in bias
 
 Random Forest Model: Practical
@@ -445,9 +445,6 @@ rf_model_predict <- function(rf_model) {
   
   rbindlist(apply(pred_mat, MARGIN = 1, best_prob))
 }
-
-# calculate the best class probability for each tweet
-probs <- rf_model_predict(rf_model)
 ```
 
 Random Forest Model: Averaging the probabilities
@@ -456,9 +453,10 @@ class: medium-small-code
 Multiple probabilities will exist for each class as multiple tweets may be assigned to the same lat-long class.
 Form the average to reduce to a single probablity per region:
 ```{r,eval=FALSE}
+probs <- rf_model_predict(rf_model)
 probs[, list(percentage = round(mean(percentage), 2L)), by = c('lat', 'lon')][order(lat, lon)]
 ```
 ```{r,echo=FALSE}
 load(file = 'mean_probs.RData')
-print(mean_probs, topn = 10)
+print(mean_probs, topn = 8)
 ```
