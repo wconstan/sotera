@@ -99,8 +99,8 @@ if (!exists('tweet_history_user')) load(file = 'tweet_history.RData')
 DT <- get_geo_tagged_data(tweet_history_user)
 
 #####################################################################################
-# Feature engineering
-
+# Add travel distance as a feauture
+#
 # People may limit their travel based on the distance, e.g., why go 50 miles
 # for ice cream when you go a few miles from home to get it? Our user, however,
 # traveled to the Philippines this last year and so we need to define the
@@ -135,7 +135,7 @@ save(DT, cluster, centers, regions, file = 'clusters.RData')
 plot_cluster <- function(data) {
   stopifnot(is.data.table(data))
   stopifnot(data[, length(unique(region))] == 1L)
-
+  
   color <- data[, unique(cluster_color)]
   region <- data[, unique(region)]
   centers <- data[, list(latitude = unique(center_latitude), longitude = unique(center_longitude))]
@@ -170,6 +170,7 @@ plot_cluster <- function(data) {
 plot_cluster(DT[region == 'PACNW'])
 plot_cluster(DT[region == 'PHILIPPINES'])
 
+# Create distance from clsuter centers
 vincenty_distance <- function(p1, p2, r = 3963.190592) {
   # Vincenty elipsoid great circle distance between two points in miles
   miles_per_meter <- 0.000621371
@@ -177,9 +178,18 @@ vincenty_distance <- function(p1, p2, r = 3963.190592) {
 }
 
 DT[, dist_from_center := vincenty_distance(cbind(center_longitude, center_latitude), 
-                                             cbind(longitude, latitude)), 
+                                           cbind(longitude, latitude)), 
    by = region]
+ix <- 10:13
+sample_distance <- DT[, list(text = paste(substr(text[ix], 1, 50), '...'), 
+                             dist_from_center = dist_from_center[ix], 
+                             latitude = latitude[ix], 
+                             longitude = longitude[ix]), 
+                      by = region]
+save(sample_distance, file='sample_distance.RData')
 
+#####################################################################################
+# Add various features centered around time
 
 # Convert the Tweet date to a day of the week (Monday, Tuesday, etc.) and merge into training data
 DT[, day := factor(weekdays(created))]
@@ -201,7 +211,7 @@ daytime_category <-function(date) {
 
 DT[, day_time := factor(daytime_category(created))]
 
-# add season
+# Add season feature
 date_to_season <- function(DATES) {
   WS <- as.Date("2012-12-15", format = "%Y-%m-%d") # Winter Solstice
   SE <- as.Date("2012-3-15",  format = "%Y-%m-%d") # Spring Equinox
@@ -218,43 +228,55 @@ date_to_season <- function(DATES) {
 
 DT[, season := factor(date_to_season(created))]
 
-# add temp data
-# http://www.ncdc.noaa.gov/cdo-web
+# Create sample for demonstration
+ix <- 9:11
+sample_time <- DT[, list(text = paste(substr(text[ix], 1, 40), '...'), 
+                         day = day[ix], 
+                         day_time = day_time[ix], 
+                         season = season[ix]), 
+                  by = region]
+save(sample_time, file='sample_time.RData')
 
+
+#####################################################################################
+# Add weather data, since that likely affects when and where people travel
+# NOTE: data obtained by rquest from http://www.ncdc.noaa.gov/cdo-web
+# and stored in a local file weather.csv
 weather <- data.table(read.csv('weather.csv'))
 weather <- weather[grepl('Seattle|Manila', STATION_NAME, ignore.case = TRUE) & TAVG > 0]
 weather[, region := ifelse(grepl('Seattle', STATION_NAME, ignore.case = TRUE), 'PACNW', 'PHILIPPINES')]
 weather <- weather[, list(region, DATE, PRCP, TAVG, TMAX, TMIN)]
-
 DT[, DATE := as.integer(format(created, '%Y%m%d'))]
 DT <- merge(DT, weather, by = c('region', 'DATE'), all.x = TRUE)
 
+# fix missing values
+DT[PRCP < 0, PRCP := 0.0]
 
-# form lat-long target category
-DT[, lat_long := factor(paste(round(latitude, 2L), round(longitude, 2L), sep = ':'))]
+# Form sample for demonstration
+sample_weather <- DT[PRCP > 0, list(region,
+                                    text = paste(substr(text, 1, 40), '...'), 
+                                    DATE, 
+                                    PRCP,
+                                    TAVG)][c(1:3, 40:46)]
+save(sample_weather, file='sample_weather.RData')
 
-# search_string <- "#mls"
-# num_tweets <- 100
-# tweets <- searchTwitter(search_string, n=num_tweets, lang="en")
-
-# wordcloud
-# words <- DT[, clean_words(text)]
-# word_table <- table(words)
-# wordcloud(words = names(word_table), freq = word_table, min.freq = 3L)
+#####################################################################################
+# Parse Tweet text for location information
 
 # Tweets seem to have a lot of location identifiers like:
 #   "I'm at Bank Of America in Seattle, WA https://t.co/HhkT9UDBx0"
 # The bulk of these have an '@' or an 'at' word followed by a location
 # where each word of the location is capiltalized. 
+text_location_example <- DT[205:214, text]
+save(text_location_example, file = 'text_location_example.RData')
+
+# Define local functions to parse Tweet text
 first_letter_is_capitalized <- function(word){
   word_letters <- strsplit(word, '')[[1L]]
   first_letter <- word_letters[1L]
   is_capitalized <- first_letter == toupper(first_letter)
   return(is_capitalized)
 }
-
-example <- DT[207, text]
-print(example)
 
 parse_tweet_location <- function(tweet) {
   
@@ -293,30 +315,44 @@ parse_tweet_location <- function(tweet) {
       last_word <- last_word + good[1L] - 1L
     }
   }
-
+  
   if (is.na(last_word)) last_word <- length(words)
   
   # return the location, lower cased and collapsed
   tolower(paste(words[first_word:last_word], collapse = '_'))
 } 
 
-example
-parse_tweet_location(example)
-
 parsed_locations <- data.table(loc = sapply(DT[, text], parse_tweet_location))
 
-# cannot have more than 53 categories or else randomForest dies
+# save examples for demonstration
+original_tweets <- text_location_example[3:5]
+parsed_tweet_locations <- parsed_locations[207:209]
+save(original_tweets, parsed_tweet_locations, file = 'parsed_locations.RData')
+
+# Cannot have more than 53 categories or else randomForest dies
 # take the most popular
-most_popular <- parsed_locations[, .N, by=loc][order(-N)][1:53, loc]
+popular_locations <- parsed_locations[,.N, by=loc][N > 2][order(-N)]
+save(popular_locations, file='popular_locations.RData')
+
+most_popular <- popular_locations[, loc]
 parsed_locations[!loc %in% most_popular, loc := '']
 parsed_locations[!nzchar(loc), loc := 'missing']
 DT[, parsed_location := factor(parsed_locations$loc)]
 
+#####################################################################################
+# Divide regional space by rounding the latitude and longitude to the nearest hundredth
+# This will form regional categories that we can use in a classification model
+DT[, lat_long := factor(paste(round(latitude, 2L), round(longitude, 2L), sep = ':'))]
+
+# provide sample of training data
+sample_training <- rbind(DT[1:3], DT[parsed_location != 'missing' & region == 'PHILIPPINES'][1:3])
+training_data_sample <- sample_training[, list(lat_long, day, day_time, season, TAVG, TMIN, TMAX, PRCP, dist_from_center, parsed_location, region)]
+
+
+
 ######
 # fit model
 DT[, region := factor(region)]
-form <- formula(lat_long ~ DATE + day + day_time + TAVG + TMIN + TMAX + dist_from_center + PRCP + season + region + parsed_location)
-
 form <- formula(lat_long ~ day + day_time + TAVG + TMIN + TMAX + dist_from_center + PRCP + season + region + parsed_location)
 
 # check for missing independent variables

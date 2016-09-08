@@ -210,7 +210,7 @@ plot_cluster <- function(data) {
     expand_limits(x = regional_map$long, y = regional_map$lat) +
     geom_point(data = data, aes(x = longitude, y = latitude), size = 3, alpha = 2/5, color = color) +
     geom_point(data = centers, 
-               aes(x = longitude, y = latitude), size = 1, stroke = 1, alpha = 1, color = 'black', fill = 'white', shape = 21) +
+               aes(x = longitude, y = latitude), size = 1.5, stroke = 1.5, alpha = 1, color = 'black', fill = 'white', shape = 21) +
     geom_point(data = capital, aes(x = longitude, y = latitude), size = 1, alpha = 1, 
                shape = 24, color = 'black', fill = 'black') +
     geom_point(data = capital, aes(x = longitude, y = latitude), size = 1, alpha = 1, 
@@ -229,47 +229,113 @@ plot_cluster(DT[region == 'PACNW']); plot_cluster(DT[region == 'PHILIPPINES'])
 
 Pacific Northwest cluster
 ========================================================
-class: small-code
-```{r pacnw_cluster,echo=FALSE,fig.width=3,fig.height=1.6,dpi=300,out.width="1920px",height="1080px"}
+title: false
+```{r pacnw_cluster,echo=FALSE,fig.width=8,fig.height=5,dpi=300,out.width="1920px",height="1080px"}
 plot_cluster(DT[region == 'PACNW'])
 ```
 
 Phillippines cluster
 ========================================================
-class: small-code
-```{r philippines_cluster,echo=FALSE,fig.width=5,fig.height=2.8,dpi=300,out.width="1920px",height="1080px"}
+title: false
+```{r philippines_cluster,echo=FALSE,fig.width=8,fig.height=5,dpi=300,out.width="1920px",height="1080px"}
 plot_cluster(DT[region == 'PHILIPPINES'])
 ```
 
-
-
-Gathering supporting data
+Form distance from cluster centers
 ========================================================
-- **Weather**: travel behavior is influenced by the weather and so I gathered temperature and precipitation data from NOAA for the Seattle area and the Philippines and merged it with the Twitter data <http://www.ncdc.noaa.gov/cdo-web/>
+class: super-small-code
+```{r, eval=FALSE}
+vincenty_distance <- function(p1, p2, r = 3963.190592) {
+  # Vincenty elipsoid great circle distance between two points in miles
+  miles_per_meter <- 0.000621371
+  distVincentyEllipsoid(p1, p2) * miles_per_meter
+}
 
+DT[, dist_from_center := vincenty_distance(cbind(center_longitude, center_latitude), 
+                                           cbind(longitude, latitude)), 
+   by = region]
 
-Modeling Effort: Collecting Twitter Data 2
-========================================================
-
-Tweets can be filtered by keywords, users, language, and location. The output can be saved as an object in memory or written to a text file.
-
-The information gathered via the Twitter streams and history APIs allowed me to idenitfy a high-volume Tweeter that
-For more details on authoring R presentations please visit <https://support.rstudio.com/hc/en-us/articles/200486468>.
-
-- Bullet A
-- Bullet 2
-- Bullet 3
-
-Slide With Code
-========================================================
-
-```{r}
-summary(cars)
+# Sample distances (miles)
+ix <- 10:13
+DT[, list(text = paste(substr(text[ix], 1, 50), '...'), 
+          dist_from_center = dist_from_center[ix], 
+          latitude = latitude[ix], 
+          longitude = longitude[ix]), 
+   by = region]
+```
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'sample_distance.RData')
+print(sample_distance)
+options(old_opts)
 ```
 
-Slide With Plot
+Adding time features
 ========================================================
+class: small-code
+People tend to travel to different locations depending on the day of the week, the time of day, and even the season of the year. Skipping the details, I added many of these features as well by converting the datetime information packed with the Tweet accordingly. Here is a sample of these features:
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'sample_time.RData')
+print(sample_time)
+options(old_opts)
+```
 
-```{r, echo=FALSE}
-plot(cars)
+Adding weather data
+========================================================
+class: small-code
+Weather also influences travel behavior. I gathered temperature and precipitation data from NOAA (<http://www.ncdc.noaa.gov/cdo-web/>) for the Seattle area and the Philippines and merged it with the Twitter data. Here is a sample:
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'sample_weather.RData')
+print(sample_weather)
+options(old_opts)
+```
+
+Parsing location via tweet text
+========================================================
+class: small-code
+You may have noticed that the Tweets of the target user are mostly comprised of where they are at! Here are a few examples:
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'text_location_example.RData')
+print(text_location_example)
+options(old_opts)
+```
+
+Parsing location via tweet text (continued)
+========================================================
+class: small-code
+I wrote code to filter the texts for location descriptions following **@** or **at** in the Tweet and then collapsed the resulting location words into a single word separated by underscores. The idea is to form a categorical variable identifying the location via parsed Tweets. Here are some samples:
+
+Original text
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'parsed_locations.RData')
+print(original_tweets)
+```
+Parsed location label
+```{r,echo=FALSE}
+print(parsed_tweet_locations)
+options(old_opts)
+```
+
+Parsing location via tweet text (continued)
+========================================================
+class: small-code
+Here is a list of the most frequently visited locations:
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'popular_locations.RData')
+print(popular_locations)
+options(old_opts)
+```
+
+Forming response variable
+========================================================
+class: small-code
+```{r,eval=FALSE}
+# Divide regional space by rounding the latitude and longitude to the nearest hundredth
+# This will form regional categories that we can use in a classification model
+DT[, lat_long := factor(paste(round(latitude, 2L), round(longitude, 2L), sep = ':'))]
 ```
