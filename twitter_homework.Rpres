@@ -17,6 +17,10 @@
   font-size: 1em;
 }
 
+.medium-small-code pre code {
+  font-size: 0.8em;
+}
+
 .super-small-code pre code {
   font-size: 0.6em;
 }
@@ -338,4 +342,123 @@ class: small-code
 # Divide regional space by rounding the latitude and longitude to the nearest hundredth
 # This will form regional categories that we can use in a classification model
 DT[, lat_long := factor(paste(round(latitude, 2L), round(longitude, 2L), sep = ':'))]
+```
+
+First peek at the training data
+========================================================
+class: medium-small-code
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'training_data_sample.RData')
+print(training_data_sample)
+options(old_opts)
+```
+
+Random Forest Model: Conceptual
+========================================================
+class: small-code
+
+<small>Reference: Gradient Boosting Method and Random Forest - Mark Landry @ H20.ai <https://www.youtube.com/watch?v=9wn1f-30_ZY></small>
+
+- Grow and combine multiple decision trees, each fit to a random sample of the original data (rows and columns)
+- The random samples are taken both by rows (Tweet obersvations) and columns (features)
+- Conceptually, reduces variance with minimal increase in bias
+
+Random Forest Model: Practical
+========================================================
+class: small-code
+
+<small>Reference: Gradient Boosting Method and Random Forest - Mark Landry @ H20.ai <https://www.youtube.com/watch?v=9wn1f-30_ZY></small>
+
+- Strengths
+  * Easy to use: few parameters, typically with well established default values 
+  * Robust to feature distributions
+  * Competitive accuracy on most data sets
+- Weaknesses
+  * Can be slow to score
+  * Lack of transparency, unlike individual decision trees
+
+Random Forest Model: Formula
+========================================================
+class: small-code
+
+```{r}
+form <- formula(lat_long ~ day + day_time + TAVG + TMIN + TMAX + dist_from_center + PRCP + season + region + parsed_location)
+```
+
+- Factor variables: **lat_long, day, day_time, season, region, parsed_location**
+- Continuous variables: **TAVG, TMIN, TMAX, PRCP, dist_from_center**
+
+Random Forest Model: Handling missing data
+========================================================
+class: super-small-code
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'missing_data.RData')
+print(missing_data)
+options(old_opts)
+```
+```{r,eval=FALSE}
+training_data <- data.table(rfImpute(form, data = DT))
+```
+```{r,echo=FALSE}
+old_opts <- options(width=150)
+load(file = 'missing_data_imputed.RData')
+print(missing_data_imputed)
+options(old_opts)
+```
+
+Random Forest Model: building
+========================================================
+class: super-small-code
+```{r,eval=FALSE}
+rf_model <- randomForest(form, data=training_data, importance=TRUE, proximity=TRUE)
+varImpPlot(rf_model)
+```
+
+```{r variable_importance,echo=FALSE,fig.width=8,fig.height=3.5,dpi=300,out.width="1920px",height="1080px"}
+library(randomForest)
+load(file = 'rf_model.RData')
+varImpPlot(rf_model)
+```
+
+Random Forest Model: Predicting the probabilities
+========================================================
+class: medium-small-code
+Define a function to obtain prediction probability matrix: M x C
+for M observations (tweets) and C classes (lat_long regions)
+For each observation, find the maximum probabliity and the associated class.
+Round the probabliities to the nearest hundredth and return as a data.table object
+
+```{r,eval=FALSE}
+rf_model_predict <- function(rf_model) {
+  
+  pred_mat <- predict(rf_model, type='prob')
+  classes <- data.table(do.call(rbind.data.frame, strsplit(colnames(pred_mat), split = ':')))
+  setnames(classes, c('lat','lon'))
+  
+  best_prob <- function(probs){
+    ix <- which.max(probs)
+    cbind(classes[ix], 
+          data.table(percentage = round(probs[ix] * 100, 2L)))
+  }
+  
+  rbindlist(apply(pred_mat, MARGIN = 1, best_prob))
+}
+
+# calculate the best class probability for each tweet
+probs <- rf_model_predict(rf_model)
+```
+
+Random Forest Model: Averaging the probabilities
+========================================================
+class: medium-small-code
+Multiple probabilities will exist for each class as multiple tweets may be assigned to the same lat-long class.
+Form the average to reduce to a single probablity per region:
+```{r,eval=FALSE}
+probs[, list(percentage = round(mean(percentage), 2L)), by = c('lat', 'lon')][order(lat, lon)]
+```
+```{r,echo=FALSE}
+load(file = 'mean_probs.RData')
+print(mean_probs, topn = 10)
 ```

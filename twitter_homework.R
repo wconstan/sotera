@@ -347,11 +347,10 @@ DT[, lat_long := factor(paste(round(latitude, 2L), round(longitude, 2L), sep = '
 # provide sample of training data
 sample_training <- rbind(DT[1:3], DT[parsed_location != 'missing' & region == 'PHILIPPINES'][1:3])
 training_data_sample <- sample_training[, list(lat_long, day, day_time, season, TAVG, TMIN, TMAX, PRCP, dist_from_center, parsed_location, region)]
+save(training_data_sample, file = 'training_data_sample.RData')
 
-
-
-######
-# fit model
+#####################################################################################
+# Fit the classification model
 DT[, region := factor(region)]
 form <- formula(lat_long ~ day + day_time + TAVG + TMIN + TMAX + dist_from_center + PRCP + season + region + parsed_location)
 
@@ -361,21 +360,35 @@ rows_with_missing_data <- which(apply(DT[, ind_vars, with = FALSE], MARGIN = 1, 
 any_missing <- length(rows_with_missing_data) > 0L
 if (any_missing) {
   cat('\nRows with missing data:\n');flush.console()
-  DT[rows_with_missing_data, ind_vars, with = FALSE]
+  missing_data <- DT[rows_with_missing_data, ind_vars, with = FALSE]
+  print(missing_data)
+  save(missing_data, file = 'missing_data.RData')
 }
 
-DT <- data.table(rfImpute(form, data = DT))
+# Impute missing data to form the full training data set
+training_data <- data.table(rfImpute(form, data = DT))
 
 if (any_missing) {
   cat('\nRows that HAD missing data:\n');flush.console()
-  DT[rows_with_missing_data, ind_vars, with = FALSE]
+  missing_data_imputed <- training_data[rows_with_missing_data, ind_vars, with = FALSE]
+  print(missing_data_imputed)
+  save(missing_data_imputed, file = 'missing_data_imputed.RData')
 }
 
-rf_model <- randomForest(form, data=DT, importance=TRUE, proximity=TRUE)
+# Build the random forest model
+rf_model <- randomForest(form, data=training_data, importance=TRUE, proximity=TRUE)
+save(rf_model, file = 'rf_model.RData')
 
-# variable importance
+# Plot variable importance
 varImpPlot(rf_model)
 
+#####################################################################################
+# Form predictions
+
+# Define a function to obtain prediction probability matrix: M x C
+# for M observations (tweets) and C classes (lat_long regions)
+# For each observation, find the maximum probabliity and the associated class.
+# Round the probabliities to the nearest hundredth and return as a data.table object
 rf_model_predict <- function(rf_model) {
   
   pred_mat <- predict(rf_model, type='prob')
@@ -398,6 +411,7 @@ probs <- rf_model_predict(rf_model)
 # multiple tweets may be assigned to the same lat-long class:
 # form the average to reduce to a single probablity per location
 mean_probs <- probs[, list(percentage = round(mean(percentage), 2L)), by = c('lat', 'lon')][order(lat, lon)]
+save(mean_probs, file = 'mean_probs.RData')
 
 # output to a file
 write.csv(mean_probs, file = 'twitter_homewor.csv')
