@@ -414,5 +414,5 @@ mean_probs <- probs[, list(percentage = round(mean(percentage), 2L)), by = c('la
 save(mean_probs, file = 'mean_probs.RData')
 
 # output to a file
-write.csv(mean_probs, file = 'twitter_homewor.csv')
+write.csv(mean_probs, file = 'twitter_homework.csv')
 
